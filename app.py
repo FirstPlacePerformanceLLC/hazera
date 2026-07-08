@@ -48,9 +48,46 @@ LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAegAAAEkCAYAAADkeqLDAAB8CUlEQVR42u2deXgUVfb3
 import base64 as _b64
 LOGO_BYTES = _b64.b64decode(LOGO_B64)
 
-EXERCISES = ["reconnect", "disc", "dice"]
+EXERCISES = ["values", "reconnect", "disc", "dice"]
 
 SCENARIO = "Think of someone you work with every week. Do not name them."
+
+VALUES_LIST = [
+    "Integrity", "Humility", "Gratitude", "Compassion", "Authenticity",
+    "Loyalty", "Patience", "Kindness", "Curiosity", "Courage",
+]
+
+BEHAVIORS_LIST = [
+    "Setting clear expectations", "Holding people accountable",
+    "Giving timely feedback", "Recognizing contributions",
+    "Coaching for development", "Making decisions",
+    "Communicating clearly", "Listening actively",
+    "Delegating effectively", "Following through",
+]
+
+
+def _build_values_form_html():
+    b = BRAND
+    p = []
+    p.append("<div class='card'>")
+    p.append("<div class='hd' style='font-size:18px;color:" + b["green"] + "'>Who I am, how I show up</div>")
+    p.append("<p class='muted' style='margin:6px 0 14px'>Check the four that matter most to you right now, across both lists.</p>")
+    p.append("<div class='vcols'>")
+    p.append("<div class='vcol'><div class='vh' style='color:" + b["green"] + "'>Who I am</div>")
+    for t in VALUES_LIST:
+        p.append("<label class='opt'><input type='checkbox' class='vchk' data-kind='v' data-k='" + t + "' onchange='vlimit(this)'><span>" + t + "</span></label>")
+    p.append("</div>")
+    p.append("<div class='vcol'><div class='vh' style='color:" + b["orange"] + "'>How I show up</div>")
+    for t in BEHAVIORS_LIST:
+        p.append("<label class='opt'><input type='checkbox' class='vchk' data-kind='b' data-k='" + t + "' onchange='vlimit(this)'><span>" + t + "</span></label>")
+    p.append("</div></div>")
+    p.append("<div class='vcount' id='vcount'>0 of 4 selected</div>")
+    p.append("<button class='btn' onclick='sendValues()'>Submit my four</button>")
+    p.append("</div>")
+    return "".join(p)
+
+
+_VALUES_FORM_HTML = _build_values_form_html()
 
 
 def get_conn():
@@ -224,6 +261,20 @@ def base_css():
         "transform:translateY(10px)}"
         ".tile.in{opacity:1;transform:translateY(0);"
         "transition:opacity .5s ease,transform .5s ease}"
+        ".vcols{display:grid;grid-template-columns:1fr 1fr;gap:16px}"
+        ".vcol .vh{font-family:'Poppins',sans-serif;font-weight:600;font-size:14px;"
+        "margin-bottom:8px}"
+        ".opt{display:flex;align-items:flex-start;gap:8px;font-size:14px;margin-bottom:8px;"
+        "cursor:pointer;line-height:1.35}"
+        ".opt input{margin-top:3px;width:16px;height:16px;accent-color:" + b["green"] + ";flex:none}"
+        ".vcount{font-size:13px;color:" + b["muted"] + ";font-weight:600;margin:8px 0 14px}"
+        ".vgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}"
+        ".vgh{font-family:'Poppins',sans-serif;font-weight:600;font-size:13px;margin-bottom:8px}"
+        ".trow{margin-bottom:8px}"
+        ".tline{display:flex;justify-content:space-between;font-size:13px;"
+        "color:" + b["green_deep"] + ";margin-bottom:3px}"
+        ".tbarwrap{height:8px;border-radius:6px;background:" + b["green_tint"] + ";overflow:hidden}"
+        ".tbar{height:100%;border-radius:6px}"
     )
 
 
@@ -254,12 +305,14 @@ def participant_html():
     script = (
         "<script>"
         "var S={};"
+        "var VFORM=" + json.dumps(_VALUES_FORM_HTML) + ";"
         "function esc(s){var d=document.createElement('div');d.textContent=s||'';"
         "return d.innerHTML;}"
         "var lastKey='';"
         "function load(force){fetch('/state').then(r=>r.json())"
         ".then(function(st){render(st,force);});}"
         "function vkey(st){"
+        "if(st.values.status=='open')return 'values:'+(sent('values')?1:0);"
         "if(st.reconnect.status=='open')return 'reconnect:'+(sent('reconnect')?1:0);"
         "if(st.disc.status=='open')return 'disc:'+(sent('disc')?1:0);"
         "if(['open','voting','revealed'].includes(st.dice.status))"
@@ -270,10 +323,12 @@ def participant_html():
         "if(!force&&k===lastKey)return;lastKey=k;"
         "var v=document.getElementById('view');"
         "var open=null;"
-        "if(st.reconnect.status=='open')open='reconnect';"
+        "if(st.values.status=='open')open='values';"
+        "else if(st.reconnect.status=='open')open='reconnect';"
         "else if(st.disc.status=='open')open='disc';"
         "else if(['open','voting','revealed'].includes(st.dice.status))open='dice';"
         "if(!open){v.innerHTML=waiting();return;}"
+        "if(open=='values')v.innerHTML=valuesForm();"
         "if(open=='reconnect')v.innerHTML=reconnect();"
         "if(open=='disc')v.innerHTML=disc();"
         "if(open=='dice')diceView(v);"
@@ -282,6 +337,18 @@ def participant_html():
         "<div class='big'>Stand by</div>"
         "<p class='muted' style='margin-top:8px'>Ken will open the next step. "
         "Keep this tab open.</p></div>\";}"
+        "function valuesForm(){if(sent('values'))"
+        "return thanks('Your picks are in. Watch the shared screen.');return VFORM;}"
+        "function vlimit(el){var b=document.querySelectorAll('.vchk');var c=0;"
+        "b.forEach(function(x){if(x.checked)c++;});"
+        "if(c>4){el.checked=false;c=4;}"
+        "b.forEach(function(x){if(!x.checked)x.disabled=(c>=4);});"
+        "var cc=document.getElementById('vcount');"
+        "if(cc)cc.textContent=c+' of 4 selected';}"
+        "function sendValues(){var b=document.querySelectorAll('.vchk');var vs=[],bs=[];"
+        "b.forEach(function(x){if(x.checked){var k=x.getAttribute('data-k');"
+        "if(x.getAttribute('data-kind')=='v')vs.push(k);else bs.push(k);}});"
+        "if(vs.length+bs.length<1)return;post('/submit/values',{values:vs,behaviors:bs});}"
         "function reconnect(){if(sent('reconnect'))return thanks('Reflection in. "
         "Watch the shared screen.');"
         "return \"<div class='card'>"
@@ -494,10 +561,14 @@ def host_html(secret):
         "if(ex!=='dice'){h+=\"<div id='scan_\"+ex+\"' class='scan mid'></div>"
         "<div class='mirror' id='mirror_\"+ex+\"' style='display:none'></div>"
         "<button id='el_\"+ex+\"' class='btn green' style='display:none;width:auto;padding:10px 16px;margin-top:10px' onclick=\\\"emailLimor('\"+ex+\"')\\\">Email this to Limor</button>\";}"
+        "if(ex==='values'){h+=\"<div class='mid' id='values_grid'></div>\";}"
         "if(ex==='disc'){h+=\"<div class='mid' id='disc_grid'></div>\";}"
         "if(ex==='dice'){h+=\"<div class='mid' id='vote_box'></div>\";}"
         "h+=\"</div>\";return h;}"
         "function build(){var s=document.getElementById('stage');var h='';"
+        "h+=shell('Who I am, how I show up','values',"
+        "\"<button class='btn green' style='width:auto;padding:12px 18px;margin-left:12px' "
+        "onclick=\\\"synth('values')\\\">Run group synthesis</button>\");"
         "h+=shell('January reconnect','reconnect',"
         "\"<button class='btn green' style='width:auto;padding:12px 18px;margin-left:12px' "
         "onclick=\\\"synth('reconnect')\\\">Run group synthesis</button>\");"
@@ -532,7 +603,7 @@ def host_html(secret):
         "var sc=document.getElementById('scan_'+ex);if(sc)sc.style.width='0';}"
         "function pull(){fetch('/host/'+SEC+'/data').then(r=>r.json()).then(update);}"
         "function update(d){if(!built)build();"
-        "['reconnect','disc','dice'].forEach(function(ex){var bb=d[ex];var c=bb.count;"
+        "['values','reconnect','disc','dice'].forEach(function(ex){var bb=d[ex];var c=bb.count;"
         "var cnt=document.getElementById('cnt_'+ex);"
         "if((prev[ex]||0)!==c){num(cnt,c);pulse(document.getElementById('stat_'+ex));}"
         "if(c<(prev[ex]||0))resetStream(ex);"
@@ -545,7 +616,7 @@ def host_html(secret):
         "var vt=document.getElementById('vt_dice');"
         "if(vt){if(d.dice.status==='voting'){vt.classList.remove('go');vt.classList.add('on');}"
         "else{vt.classList.add('go');vt.classList.remove('on');}}"
-        "['reconnect','disc'].forEach(function(ex){var bb=d[ex];"
+        "['values','reconnect','disc'].forEach(function(ex){var bb=d[ex];"
         "if(bb.synthesis&&!shownSynth[ex]){shownSynth[ex]=true;"
         "var sc=document.getElementById('scan_'+ex);if(sc)sc.style.width='100%';"
         "setTimeout(function(){var m=document.getElementById('mirror_'+ex);"
@@ -556,6 +627,7 @@ def host_html(secret):
         "var eb=document.getElementById('el_'+ex);if(eb)eb.style.display='none';"
         "var sc=document.getElementById('scan_'+ex);if(sc)sc.style.width='0';}});"
         "if(d.disc.status!=='locked')paintDisc(d);"
+        "if(d.values.status!=='locked')paintValues(d);"
         "if(d.dice.status==='voting'||d.dice.status==='revealed')paintVotes(d);}"
         "var DC={D:['" + b["orange_tint"] + "','" + b["orange_mid"] + "','D, results'],"
         "I:['#FAEEDA','#854F0B','I, people'],S:['#E6F1FB','#185FA5','S, stability'],"
@@ -582,6 +654,24 @@ def host_html(secret):
         "box.innerHTML=h;requestAnimationFrame(function(){"
         "document.querySelectorAll('#vote_box .fill').forEach(function(f,idx){"
         "var pct=items[idx]?(total?Math.round(items[idx].count/total*100):0):0;f.style.width=pct+'%';});});}"
+        "function vcol(title,arr,color){var wrap=document.createElement('div');"
+        "wrap.className='vgcol';var hd=document.createElement('div');hd.className='vgh';"
+        "hd.style.color=color;hd.textContent=title;wrap.appendChild(hd);var mx=0;"
+        "arr.forEach(function(i){if(i.count>mx)mx=i.count;});"
+        "arr.forEach(function(i){var row=document.createElement('div');row.className='trow';"
+        "var line=document.createElement('div');line.className='tline';"
+        "var a=document.createElement('span');a.textContent=i.label;"
+        "var bsp=document.createElement('span');bsp.style.fontWeight='600';"
+        "bsp.textContent=i.count;line.appendChild(a);line.appendChild(bsp);row.appendChild(line);"
+        "var bw=document.createElement('div');bw.className='tbarwrap';"
+        "var bar=document.createElement('div');bar.className='tbar';"
+        "bar.style.width=(mx?Math.round(i.count/mx*100):0)+'%';bar.style.background=color;"
+        "bw.appendChild(bar);row.appendChild(bw);wrap.appendChild(row);});return wrap;}"
+        "function paintValues(d){var g=document.getElementById('values_grid');if(!g)return;"
+        "var t=(d.values&&d.values.tally)||{values:[],behaviors:[]};g.innerHTML='';"
+        "var grid=document.createElement('div');grid.className='vgrid';"
+        "grid.appendChild(vcol('Who I am',t.values,G));"
+        "grid.appendChild(vcol('How I show up',t.behaviors,ORG));g.appendChild(grid);}"
         "pull();setInterval(pull,2500);"
         "</script>"
     )
@@ -618,6 +708,11 @@ def submit_reconnect():
 @app.route("/submit/disc", methods=["POST"])
 def submit_disc():
     return save_response("disc", request.get_json(force=True))
+
+
+@app.route("/submit/values", methods=["POST"])
+def submit_values():
+    return save_response("values", request.get_json(force=True))
 
 
 def send_email(to_email, subject, html):
@@ -824,7 +919,39 @@ def host_synth(secret):
                 "SELECT payload FROM responses WHERE exercise=%s ORDER BY id", (ex,)
             )
             rows = cur.fetchall()
-    if ex == "reconnect":
+    if ex == "values":
+        vc = {}
+        bc = {}
+        n = len(rows)
+        for r in rows:
+            p = r["payload"]
+            for lab in (p.get("values") or []):
+                vc[lab] = vc.get(lab, 0) + 1
+            for lab in (p.get("behaviors") or []):
+                bc[lab] = bc.get(lab, 0) + 1
+        vtop = sorted(vc.items(), key=lambda x: -x[1])
+        btop = sorted(bc.items(), key=lambda x: -x[1])
+        vline = ", ".join(k + " " + str(v) for k, v in vtop) or "none yet"
+        bline = ", ".join(k + " " + str(v) for k, v in btop) or "none yet"
+        prompt = (
+            "You are helping a Dale Carnegie facilitator debrief an opening exercise "
+            "with about 20 leaders on a live shared screen. Each leader picked the four "
+            "items that matter most to them, drawn from two lists, personal values (who "
+            "they are) and leadership behaviors (how they show up). Below are the group "
+            "tallies as label and count. Report what the room chose most and what it "
+            "says about them. Return ONLY valid JSON, no preface, in this exact shape: "
+            '{"headline":"one short sentence","groups":['
+            '{"label":"Who we are","points":["short point","..."]},'
+            '{"label":"How we show up","points":["...","..."]},'
+            '{"label":"What this says","points":["one insight"]}]}. '
+            "Name the leading values and behaviors from the tallies. Each point is a "
+            "short declarative fragment, six to ten words, easy to read aloud, about the "
+            "group not individuals. Two or three points per group. No dashes anywhere.\n\n"
+            "Participants: " + str(n) + "\n"
+            "Values chosen (label count): " + vline + "\n"
+            "Behaviors chosen (label count): " + bline
+        )
+    elif ex == "reconnect":
         lines = []
         for r in rows:
             p = r["payload"]
@@ -882,7 +1009,7 @@ def host_email_synth(secret):
     syn = states().get(ex, {}).get("synthesis", "")
     if not syn:
         return jsonify({"ok": False, "error": "no synthesis"})
-    label = {"reconnect": "January reconnect", "disc": "DISC in action"}.get(ex, ex)
+    label = {"values": "Who I am, how I show up", "reconnect": "January reconnect", "disc": "DISC in action"}.get(ex, ex)
     html = (
         "<div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px'>"
         "<div style='font-size:18px;font-weight:bold;color:" + BRAND["green"] + "'>"
@@ -962,6 +1089,9 @@ def host_data(secret):
                     elif ex == "disc":
                         s = p.get("style", "")
                         frag = (s + ": " + p.get("text", "")) if s else p.get("text", "")
+                    elif ex == "values":
+                        picks = (p.get("values") or []) + (p.get("behaviors") or [])
+                        frag = ", ".join(picks)
                     else:
                         frag = p.get("start", "") or p.get("stop", "")
                     frag = " ".join(frag.split())
@@ -978,6 +1108,25 @@ def host_data(secret):
                 p = r["payload"]
                 disc_items.append({"style": p.get("style", ""), "text": p.get("text", "")})
             out["disc"]["items"] = disc_items
+            cur.execute("SELECT payload FROM responses WHERE exercise='values'")
+            vc = {}
+            bc = {}
+            for r in cur.fetchall():
+                p = r["payload"]
+                for lab in (p.get("values") or []):
+                    vc[lab] = vc.get(lab, 0) + 1
+                for lab in (p.get("behaviors") or []):
+                    bc[lab] = bc.get(lab, 0) + 1
+            out["values"]["tally"] = {
+                "values": sorted(
+                    [{"label": lab, "count": vc.get(lab, 0)} for lab in VALUES_LIST],
+                    key=lambda x: -x["count"],
+                ),
+                "behaviors": sorted(
+                    [{"label": lab, "count": bc.get(lab, 0)} for lab in BEHAVIORS_LIST],
+                    key=lambda x: -x["count"],
+                ),
+            }
             cur.execute(
                 "SELECT r.id, r.payload, "
                 "(SELECT count(*) FROM votes v WHERE v.response_id=r.id) AS votes "
