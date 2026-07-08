@@ -908,6 +908,72 @@ def _synth_html(headline, groups):
     return "".join(parts)
 
 
+def _extract_synth_obj(raw):
+    if not raw:
+        return None
+    s = raw
+    for x, y in [("\u201c", '"'), ("\u201d", '"'), ("\u2018", "'"), ("\u2019", "'")]:
+        s = s.replace(x, y)
+    if "```" in s:
+        seg = s.split("```", 2)
+        if len(seg) >= 2:
+            body = seg[1]
+            if body[:4].lower() == "json":
+                body = body[4:]
+            s = body
+    candidates = []
+    n = len(s)
+    for start in range(n):
+        if s[start] != "{":
+            continue
+        depth = 0
+        instr = False
+        esc = False
+        for j in range(start, n):
+            c = s[j]
+            if instr:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    instr = False
+            else:
+                if c == '"':
+                    instr = True
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(s[start:j + 1])
+                        break
+    best = None
+    for frag in candidates:
+        for attempt in (frag, frag.replace(",}", "}").replace(",]", "]")):
+            try:
+                obj = json.loads(attempt)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and ("groups" in obj or "headline" in obj):
+                if best is None or len(frag) > best[0]:
+                    best = (len(frag), obj)
+            break
+    return best[1] if best else None
+
+
+def _synth_from_raw(raw):
+    obj = _extract_synth_obj(raw)
+    if obj is not None:
+        try:
+            return _synth_html(obj.get("headline", ""), obj.get("groups", []))
+        except Exception:
+            pass
+    clean = (raw or "").replace("```json", " ").replace("```", " ")
+    clean = " ".join(clean.split())
+    return "<div class='synhead'>" + _html.escape(clean[:600]) + "</div>"
+
+
 @app.route("/host/<secret>/synthesize", methods=["POST"])
 def host_synth(secret):
     if not require_host():
@@ -989,14 +1055,7 @@ def host_synth(secret):
             "per group. No dashes anywhere.\n\n" + "\n".join(lines)
         )
     raw = claude_text(prompt)
-    built = ""
-    try:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        obj = json.loads(raw[start:end + 1])
-        built = _synth_html(obj.get("headline", ""), obj.get("groups", []))
-    except Exception:
-        built = "<div class='synhead'>" + _html.escape(raw[:600]) + "</div>"
+    built = _synth_from_raw(raw)
     set_synthesis(ex, built)
     return jsonify({"ok": True})
 
