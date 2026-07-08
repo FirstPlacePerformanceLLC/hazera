@@ -895,6 +895,44 @@ def host_email_synth(secret):
     return jsonify({"ok": status == "sent", "status": status})
 
 
+@app.route("/host/<secret>/mailtest")
+def host_mailtest(secret):
+    if not require_host():
+        return jsonify({"ok": False}), 404
+    to = (request.args.get("to", "") or FROM_EMAIL).strip()
+    info = {
+        "key_present": bool(SENDGRID_API_KEY),
+        "key_prefix": (SENDGRID_API_KEY[:3] if SENDGRID_API_KEY else ""),
+        "from_email": FROM_EMAIL,
+        "to": to,
+    }
+    if not SENDGRID_API_KEY:
+        info["result"] = "SENDGRID_API_KEY is not set on this service"
+        return jsonify(info)
+    try:
+        r = requests.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={
+                "Authorization": "Bearer " + SENDGRID_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "personalizations": [{"to": [{"email": to}]}],
+                "from": {"email": FROM_EMAIL, "name": "Hazera Sustainment"},
+                "subject": "Hazera mail test",
+                "content": [{"type": "text/html", "value": "<p>If you can read this, SendGrid delivery works.</p>"}],
+            },
+            timeout=10,
+        )
+        info["status_code"] = r.status_code
+        info["accepted"] = r.status_code in (200, 201, 202)
+        info["sendgrid_response"] = (r.text or "")[:800]
+    except Exception as e:
+        info["status_code"] = None
+        info["error"] = str(e)[:400]
+    return jsonify(info)
+
+
 @app.route("/host/<secret>/data")
 def host_data(secret):
     if not require_host():
