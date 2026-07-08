@@ -16,6 +16,7 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 HOST_SECRET = os.environ.get("HOST_SECRET", "hazera-host")
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 FROM_EMAIL = os.environ.get("FROM_EMAIL", "info@talklog.ai")
+FROM_NAME = os.environ.get("FROM_NAME", "Dale Carnegie Nevada")
 LIMOR_EMAIL = os.environ.get("LIMOR_EMAIL", "limor.golan@hazera.com")
 CLAUDE_MODEL = "claude-sonnet-4-6"
 
@@ -632,7 +633,7 @@ def send_email(to_email, subject, html):
             },
             json={
                 "personalizations": [{"to": [{"email": to_email}]}],
-                "from": {"email": FROM_EMAIL, "name": "Hazera Sustainment"},
+                "from": {"email": FROM_EMAIL, "name": FROM_NAME},
                 "subject": subject,
                 "content": [{"type": "text/html", "value": html}],
             },
@@ -918,7 +919,7 @@ def host_mailtest(secret):
             },
             json={
                 "personalizations": [{"to": [{"email": to}]}],
-                "from": {"email": FROM_EMAIL, "name": "Hazera Sustainment"},
+                "from": {"email": FROM_EMAIL, "name": FROM_NAME},
                 "subject": "Hazera mail test",
                 "content": [{"type": "text/html", "value": "<p>If you can read this, SendGrid delivery works.</p>"}],
             },
