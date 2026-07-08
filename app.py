@@ -14,6 +14,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "change_me_in_railway_env")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 HOST_SECRET = os.environ.get("HOST_SECRET", "hazera-host")
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
+FROM_EMAIL = os.environ.get("FROM_EMAIL", "info@talklog.ai")
+LIMOR_EMAIL = os.environ.get("LIMOR_EMAIL", "limor.golan@hazera.com")
 CLAUDE_MODEL = "claude-sonnet-4-6"
 
 BRAND = {
@@ -346,12 +349,15 @@ def participant_html():
         "<textarea id='x_start' rows='2' placeholder='Start: ...'></textarea>"
         "<div style='height:8px'></div>"
         "<textarea id='x_stop' rows='2' placeholder='Stop: ...'></textarea>"
+        "<div style='height:14px'></div>"
+        "<label style='color:" + BRAND["green"] + "'>Email yourself a copy (optional)</label>"
+        "<input id='x_email' type='text' inputmode='email' placeholder='you@company.com'/>"
         "<div style='height:16px'></div>"
         "<button class='btn' onclick='sendDice()'>Lock my commitment</button></div>\";}"
         "function sendDice(){var start=val('x_start'),stop=val('x_stop');"
         "if(!start&&!stop)return;post('/submit/dice',{"
         "decrease:val('x_dec'),increase:val('x_inc'),continue_:val('x_con'),"
-        "eliminate:val('x_eli'),start:start,stop:stop});}"
+        "eliminate:val('x_eli'),start:start,stop:stop,email:val('x_email')});}"
         "function diceVote(v){if(localStorage.getItem('voted')){"
         "v.innerHTML=thanks('Vote recorded. Watch the shared screen.');return;}"
         "fetch('/commitments').then(r=>r.json()).then(function(list){"
@@ -460,6 +466,10 @@ def host_html(secret):
         "function phase(ex,p){api('/phase',{exercise:ex,status:p}).then(pull);}"
         "function synth(ex){var el=document.getElementById('scan_'+ex);if(el)el.style.width='100%';"
         "api('/synthesize',{exercise:ex}).then(pull);}"
+        "function emailLimor(ex){var eb=document.getElementById('el_'+ex);"
+        "if(eb){eb.disabled=true;eb.textContent='Sending...';}"
+        "api('/email_synth',{exercise:ex}).then(function(r){"
+        "if(eb){eb.textContent=r.ok?'Sent to Limor':'Send failed, retry';eb.disabled=false;}});}"
         "function vine(ex){var s=\"<svg class='vine' id='vine_\"+ex+\"' viewBox='0 0 500 64' preserveAspectRatio='none'>\";"
         "s+=\"<path d='M8 32 H492' stroke='\"+GLINE+\"' stroke-width='3' fill='none' stroke-linecap='round'/>\";"
         "for(var i=0;i<20;i++){var x=20+i*24;var up=i%2===0;var y=up?18:46;var col=(i%3===0)?ORG:G;"
@@ -481,7 +491,8 @@ def host_html(secret):
         "h+=vine(ex);"
         "h+=\"<div class='stream mid' id='stream_\"+ex+\"'></div>\";"
         "if(ex!=='dice'){h+=\"<div id='scan_\"+ex+\"' class='scan mid'></div>"
-        "<div class='mirror' id='mirror_\"+ex+\"' style='display:none'></div>\";}"
+        "<div class='mirror' id='mirror_\"+ex+\"' style='display:none'></div>"
+        "<button id='el_\"+ex+\"' class='btn green' style='display:none;width:auto;padding:10px 16px;margin-top:10px' onclick=\\\"emailLimor('\"+ex+\"')\\\">Email this to Limor</button>\";}"
         "if(ex==='disc'){h+=\"<div class='mid' id='disc_grid'></div>\";}"
         "if(ex==='dice'){h+=\"<div class='mid' id='vote_box'></div>\";}"
         "h+=\"</div>\";return h;}"
@@ -516,6 +527,7 @@ def host_html(secret):
         "function resetStream(ex){var box=document.getElementById('stream_'+ex);if(box)box.innerHTML='';"
         "shownStream[ex]=[];shownSynth[ex]=false;var m=document.getElementById('mirror_'+ex);"
         "if(m){m.style.display='none';m.textContent='';}"
+        "var eb=document.getElementById('el_'+ex);if(eb)eb.style.display='none';"
         "var sc=document.getElementById('scan_'+ex);if(sc)sc.style.width='0';}"
         "function pull(){fetch('/host/'+SEC+'/data').then(r=>r.json()).then(update);}"
         "function update(d){if(!built)build();"
@@ -536,9 +548,11 @@ def host_html(secret):
         "if(bb.synthesis&&!shownSynth[ex]){shownSynth[ex]=true;"
         "var sc=document.getElementById('scan_'+ex);if(sc)sc.style.width='100%';"
         "setTimeout(function(){var m=document.getElementById('mirror_'+ex);"
-        "if(m){m.innerHTML=bb.synthesis;m.style.display='block';}},650);}"
+        "if(m){m.innerHTML=bb.synthesis;m.style.display='block';}"
+        "var eb=document.getElementById('el_'+ex);if(eb)eb.style.display='inline-block';},650);}"
         "if(!bb.synthesis&&shownSynth[ex]){shownSynth[ex]=false;"
         "var m=document.getElementById('mirror_'+ex);if(m){m.style.display='none';m.textContent='';}"
+        "var eb=document.getElementById('el_'+ex);if(eb)eb.style.display='none';"
         "var sc=document.getElementById('scan_'+ex);if(sc)sc.style.width='0';}});"
         "if(d.disc.status!=='locked')paintDisc(d);"
         "if(d.dice.status==='voting'||d.dice.status==='revealed')paintVotes(d);}"
@@ -605,9 +619,74 @@ def submit_disc():
     return save_response("disc", request.get_json(force=True))
 
 
+def send_email(to_email, subject, html):
+    to_email = (to_email or "").strip()
+    if not SENDGRID_API_KEY or not to_email:
+        return "skipped"
+    try:
+        r = requests.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={
+                "Authorization": "Bearer " + SENDGRID_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "personalizations": [{"to": [{"email": to_email}]}],
+                "from": {"email": FROM_EMAIL, "name": "Hazera Sustainment"},
+                "subject": subject,
+                "content": [{"type": "text/html", "value": html}],
+            },
+            timeout=10,
+        )
+        return "sent" if r.status_code in (200, 201, 202) else ("error " + str(r.status_code))
+    except Exception:
+        return "error"
+
+
+def _dice_report_html(pl):
+    b = BRAND
+    def line(lbl, val):
+        val = (val or "").strip()
+        if not val:
+            return ""
+        return (
+            "<tr><td style='padding:6px 14px 6px 0;color:" + b["green"]
+            + ";font-weight:bold;vertical-align:top;white-space:nowrap'>" + _html.escape(lbl)
+            + "</td><td style='padding:6px 0;color:" + b["text"] + "'>" + _html.escape(val)
+            + "</td></tr>"
+        )
+    rows = (
+        line("Decrease", pl.get("decrease", ""))
+        + line("Increase", pl.get("increase", ""))
+        + line("Continue", pl.get("continue_", ""))
+        + line("Eliminate", pl.get("eliminate", ""))
+        + line("Start", pl.get("start", ""))
+        + line("Stop", pl.get("stop", ""))
+    )
+    return (
+        "<div style='font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;"
+        "border:1px solid " + b["line"] + ";border-radius:12px'>"
+        "<div style='font-size:20px;font-weight:bold;color:" + b["green"] + "'>Your Hazera commitment</div>"
+        "<p style='color:" + b["muted"] + ";font-size:14px;margin:6px 0 16px'>"
+        "The behavior you committed to in today's sustainment session. Keep it where you will see it.</p>"
+        "<table style='border-collapse:collapse;width:100%;font-size:15px'>" + rows + "</table>"
+        "<p style='color:" + b["muted"] + ";font-size:12px;margin-top:22px'>"
+        "Growing Together. Built for Hazera by Dale Carnegie Nevada.</p></div>"
+    )
+
+
 @app.route("/submit/dice", methods=["POST"])
 def submit_dice():
-    return save_response("dice", request.get_json(force=True))
+    data = request.get_json(force=True)
+    email = (data.pop("email", "") or "").strip()
+    resp = save_response("dice", data)
+    try:
+        ok = resp.get_json().get("ok")
+    except Exception:
+        ok = False
+    if ok and email:
+        send_email(email, "Your Hazera commitment", _dice_report_html(data))
+    return resp
 
 
 def save_response(exercise, data):
@@ -792,6 +871,28 @@ def host_synth(secret):
         built = "<div class='synhead'>" + _html.escape(raw[:600]) + "</div>"
     set_synthesis(ex, built)
     return jsonify({"ok": True})
+
+
+@app.route("/host/<secret>/email_synth", methods=["POST"])
+def host_email_synth(secret):
+    if not require_host():
+        return jsonify({"ok": False}), 404
+    ex = request.get_json(force=True).get("exercise")
+    syn = states().get(ex, {}).get("synthesis", "")
+    if not syn:
+        return jsonify({"ok": False, "error": "no synthesis"})
+    label = {"reconnect": "January reconnect", "disc": "DISC in action"}.get(ex, ex)
+    html = (
+        "<div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px'>"
+        "<div style='font-size:18px;font-weight:bold;color:" + BRAND["green"] + "'>"
+        "Hazera sustainment synthesis</div>"
+        "<p style='color:" + BRAND["muted"] + ";font-size:14px;margin:4px 0 16px'>" + _html.escape(label) + "</p>"
+        + syn +
+        "<p style='color:" + BRAND["muted"] + ";font-size:12px;margin-top:22px'>"
+        "Sent from the live Hazera sustainment session.</p></div>"
+    )
+    status = send_email(LIMOR_EMAIL, "Hazera sustainment, " + label + " synthesis", html)
+    return jsonify({"ok": status == "sent", "status": status})
 
 
 @app.route("/host/<secret>/data")
