@@ -46,7 +46,7 @@ LOGO_BYTES = _b64.b64decode(LOGO_B64)
 
 EXERCISES = ["reconnect", "disc", "dice"]
 
-SCENARIO = "A tight deadline lands with incomplete information. What do you do first?"
+SCENARIO = "Think of someone you work with every week. Do not name them."
 
 
 def get_conn():
@@ -298,17 +298,20 @@ def participant_html():
         "return \"<div class='card'>"
         "<div class='hd' style='font-size:18px;color:" + BRAND["green"] + "'>DISC in action</div>"
         "<div style='background:" + BRAND["hair"] + ";border-radius:8px;padding:12px;margin:12px 0'>"
-        "<div class='muted' style='font-weight:600'>Scenario</div>"
+        "<div class='muted' style='font-weight:600'>Start here</div>"
         "<div style='margin-top:4px'>" + SCENARIO + "</div></div>"
-        "<label style='color:" + BRAND["green"] + "'>Your response</label>"
-        "<textarea id='d_text' rows='3'></textarea>"
-        "<div style='height:14px'></div>"
-        "<label style='color:" + BRAND["orange"] + "'>Your natural style</label>"
+        "<label style='color:" + BRAND["orange"] + "'>Which style do they lead with?</label>"
         "<div id='styles' style='display:flex;gap:8px'>"
         "<button class='btn ghost' onclick=\\\"pick('D')\\\" data-s='D'>D</button>"
         "<button class='btn ghost' onclick=\\\"pick('I')\\\" data-s='I'>I</button>"
         "<button class='btn ghost' onclick=\\\"pick('S')\\\" data-s='S'>S</button>"
         "<button class='btn ghost' onclick=\\\"pick('C')\\\" data-s='C'>C</button></div>"
+        "<div style='height:14px'></div>"
+        "<label style='color:" + BRAND["green"] + "'>What behavior made you choose that style?</label>"
+        "<textarea id='d_text' rows='2'></textarea>"
+        "<div style='height:14px'></div>"
+        "<label style='color:" + BRAND["green"] + "'>Which Carnegie principle helps you flex to them?</label>"
+        "<textarea id='d_prin' rows='2'></textarea>"
         "<div style='height:16px'></div>"
         "<button class='btn' onclick='sendDisc()'>Submit response</button></div>\";}"
         "var chosen='';"
@@ -318,8 +321,8 @@ def participant_html():
         "b.style.borderColor='" + BRAND["orange"] + "';}"
         "else{b.style.background='#fff';b.style.color='" + BRAND["text"] + "';"
         "b.style.borderColor='" + BRAND["line"] + "';}});}"
-        "function sendDisc(){var t=val('d_text');if(!t||!chosen)return;"
-        "post('/submit/disc',{text:t,style:chosen});}"
+        "function sendDisc(){var t=val('d_text');var pr=val('d_prin');if(!chosen||!t)return;"
+        "post('/submit/disc',{style:chosen,text:t,principle:pr});}"
         "function diceView(v){var st=S.dice.status;"
         "if(st=='open'){if(sent('dice')){v.innerHTML=thanks("
         "'Commitment locked. Voting opens shortly.');return;}"
@@ -545,7 +548,7 @@ def host_html(secret):
         "function paintDisc(d){var g=document.getElementById('disc_grid');if(!g)return;"
         "var by={D:[],I:[],S:[],C:[]};(d.disc.items||[]).forEach(function(it){"
         "if(by[it.style])by[it.style].push(it.text);});"
-        "var h=\"<div class='grid4'>\";['D','I','S','C'].forEach(function(k){var c=DC[k];"
+        "var h=\"<div style='text-align:center;font-family:Poppins;color:#888780;margin:0 0 10px'>The styles you see in the people around you</div><div class='grid4'>\";['D','I','S','C'].forEach(function(k){var c=DC[k];"
         "h+=\"<div class='scol' style='background:\"+c[0]+\"'><h4 style='color:\"+c[1]+\"'>\"+c[2]+\"</h4>\";"
         "by[k].forEach(function(t){h+=\"<div class='it' style='color:\"+c[1]+\"'>\"+esc(t)+\"</div>\";});"
         "if(by[k].length===0)h+=\"<div class='it' style='color:" + b["muted"] + "'>waiting</div>\";"
@@ -763,19 +766,20 @@ def host_synth(secret):
         lines = []
         for r in rows:
             p = r["payload"]
-            lines.append("STYLE " + p.get("style", "") + ": " + p.get("text", ""))
+            lines.append("OBSERVED STYLE " + p.get("style", "") + " | BEHAVIOR: " + p.get("text", "") + " | PRINCIPLE TO FLEX: " + p.get("principle", ""))
         prompt = (
             "You are helping a Dale Carnegie facilitator debrief a DISC exercise with about "
-            "20 leaders on a live shared screen. The scenario was a tight deadline with "
-            "incomplete information. Below are anonymous responses tagged by self selected "
-            "DISC style. Return ONLY valid JSON, no preface, in this exact shape: "
+            "20 leaders on a live shared screen. Each leader thought of a coworker, then named "
+            "the DISC style that coworker leads with, the behavior that gave it away, and the "
+            "Carnegie principle that would help them flex to that person. Below are the anonymous "
+            "responses. Return ONLY valid JSON, no preface, in this exact shape: "
             '{"headline":"one short sentence","groups":['
-            '{"label":"Where styles clash","points":["short point","..."]},'
-            '{"label":"Where they complement","points":["...","..."]},'
-            '{"label":"Flex today","points":["one behavior to flex"]}]}. '
+            '{"label":"Styles in the room","points":["short point","..."]},'
+            '{"label":"How to flex to each","points":["...","..."]},'
+            '{"label":"Principle to carry","points":["one principle to lead with"]}]}. '
             "Each point is a short declarative fragment, six to ten words, easy to read "
-            "aloud, anonymous and behavioral. Two or three points per group. No dashes "
-            "anywhere.\n\n" + "\n".join(lines)
+            "aloud, anonymous and behavioral, never naming individuals. Two or three points "
+            "per group. No dashes anywhere.\n\n" + "\n".join(lines)
         )
     raw = claude_text(prompt)
     built = ""
